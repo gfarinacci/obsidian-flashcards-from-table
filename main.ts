@@ -29,7 +29,7 @@ export class DiceRollerView extends ItemView {
     	super(leaf);
 		this.icon = 'dice';
 		this.question = {headers: [], data: []};
-		this.navigation = true;
+		this.navigation = false;
 		this.meta = {};
 		this.randomIndex = 0;
 	}
@@ -43,7 +43,6 @@ export class DiceRollerView extends ItemView {
 	}
 
 	getSettings() {
-		// TODO: Controllare se funziona o revertare
 		return this.app.plugins.getPlugin('obsidian-flashcards-from-table')?.settings;
 	}
 
@@ -101,6 +100,8 @@ export class DiceRollerView extends ItemView {
 			}
 		})
 
+		this.question['data'][this.randomIndex][4] = '1'
+
 		return this.randomIndex;
 	}
 
@@ -114,7 +115,6 @@ export class DiceRollerView extends ItemView {
 	getContainerHeader(container: Element) {
 		container.createEl("h4", { text: "Dice Roller" });
 		container.createEl("hr");
-
 	}
 
 	getErrorContent(container: Element) {
@@ -123,21 +123,81 @@ export class DiceRollerView extends ItemView {
 		container.createEl("hr");
 	}
 
+	isLink(link: string) {
+		if (link[0] === '[') {
+			return true
+		} else {
+			return false
+		}
+	}
+	
+	getLinkAttributes(link: string) {
+		if (link[0] === '[') {
+			const label = link.split(']')[0].slice(1);
+			const path = link.split('(')[1].split(')')[0];
+
+			return { label, path }
+		} else {
+			return { label: link, path: null }
+		}
+	}
+
+	getUrl(path: string | null) {
+		if (path) {
+			return `obsidian://open?vault=${this.app.vault.getName()}&file=${path}`;
+		} else {
+			return '#';
+		}
+	}
+
+	getAnswerElements(container: Element, text: string) {
+		const {label, path} = this.getLinkAttributes(text)
+		const url = this.getUrl(path);
+
+		const answerDiv = container.createEl('div', { text: label, attr: { href: url, style: "visibility: hidden; display: none;"}  });	
+		const answerLink = container.createEl("a", { text: label, attr: { href: url, style: "visibility: hidden; display: none;"} });
+
+		return [answerDiv, answerLink]
+	}
+
+	manageAnswerVisibility(link: string, answerDiv: Element, answerLink: Element) {
+		const isLink = this.isLink(link);
+
+		if (isLink) {
+			answerDiv.setAttribute("style", "visibility: hidden; display: none;");
+			answerLink.setAttribute("style", "visibility: visible;");
+		} else {
+			answerDiv.setAttribute("style", "visibility: visible;");
+			answerLink.setAttribute("style", "visibility: hidden; display: none;");
+		}
+	}
+
+	hideElement(element: Element | null) {
+		if (element) {
+			element.setAttribute("style", "visibility: hidden; display: none;");
+		}
+	}
+
+	showElement(element: Element | null) {
+		if (element) {
+			element.setAttribute("style", "visibility: visible;");
+		}
+	}
+
 	getQuestionBody(container: Element, randomIndex: number) {
 		const questionText = container.createEl("div", { text: this.question['data'][randomIndex][0]});
 		container.createEl("br");
 
-		let answerText : Element;
-		let showAnswerButton: Element | null = null;
+		const [answerDiv, answerLink] = this.getAnswerElements(container, this.question['data'][randomIndex][1]);
+		this.manageAnswerVisibility(this.question['data'][randomIndex][1], answerDiv, answerLink)
 
-		if(this && this.showAnswer === '1') {
-			answerText = container.createEl('div', { text: this.question['data'][randomIndex][1] });
-		} else {
-			showAnswerButton =  container.createEl("button", { text: "Show answer"});
-			answerText = container.createEl('div', { text: this.question['data'][randomIndex][1], attr: { style: "visibility: hidden; display: none;" } });
-			
+		let showAnswerButton: Element | null = null;
+		if(this && this.showAnswer !== '1') {
+			this.hideElement(answerDiv);
+			this.hideElement(answerLink);
+			showAnswerButton =  container.createEl("button", { text: "Show answer"});	
 			showAnswerButton.addEventListener("click", () => {
-				answerText.setAttribute("style", "visibility: visible;");
+				this.manageAnswerVisibility(this.question['data'][randomIndex][1], answerDiv, answerLink)
 				if (showAnswerButton) {
 					showAnswerButton.setAttribute("style", "visibility: hidden; display: none;");
 				}
@@ -145,18 +205,22 @@ export class DiceRollerView extends ItemView {
 		}
 		container.createEl("hr");
 
-		return [questionText, answerText, showAnswerButton]
+		return [questionText, answerDiv, answerLink, showAnswerButton]
 	}
 
-	getSkipButton(container: Element, questionText: Element, answerText: Element, showAnswerButton: Element | null) {
+	getSkipButton(container: Element, questionText: Element, answerDiv: Element | null, answerLink: Element | null, showAnswerButton: Element | null) {
 		const skipButton = container.createEl("button", { text: "Skip", attr: { style: "margin-right: 10px" } });
 		skipButton.addEventListener("click", () => {
+			if (this.question['data'][this.randomIndex].length === 5) {
+				this.question['data'][this.randomIndex][4] = '1'
+			}
 			const randomIndex = this.getRandomIndex();
 			
 			questionText.setText(this.question['data'][randomIndex][0]);
-			answerText.setText(this.question['data'][randomIndex][1]);
+			this.updateAnswerElements(randomIndex, answerDiv, answerLink);
 			if(showAnswerButton) {
-				answerText.setAttribute("style", "visibility: hidden; display: none;");
+				this.hideElement(answerDiv);
+				this.hideElement(answerLink);
 				showAnswerButton.setAttribute("style", "visibility: visible;");
 			}
 		})
@@ -197,7 +261,21 @@ export class DiceRollerView extends ItemView {
 		this.updateFlashcardDataset();
 	}
 
-	getNextButton(container: Element, questionText: Element, answerText: Element, showAnswerButton: Element | null) {
+	updateAnswerElements(randomIndex: number, answerDiv: Element | null, answerLink: Element | null) {
+		if (answerDiv && answerLink) {
+			this.manageAnswerVisibility(this.question['data'][randomIndex][1], answerDiv, answerLink)
+
+			const {label, path} = this.getLinkAttributes(this.question['data'][randomIndex][1])
+			
+			answerDiv.setText(label);
+
+			answerLink.setText(label);
+			const url = this.getUrl(path);
+			answerLink.setAttribute("href", url);
+		}
+	}
+
+	getNextButton(container: Element, questionText: Element, answerDiv: Element | null, answerLink: Element | null, showAnswerButton: Element | null) {
 		const nextButton = container.createEl("button", { text: "Next", attr: { style: "margin-right: 10px" } });
 		nextButton.addEventListener("click", () => {
 			this.updateDataset();
@@ -205,19 +283,20 @@ export class DiceRollerView extends ItemView {
 			const randomIndex = this.getRandomIndex();
 			
 			questionText.setText(this.question['data'][randomIndex][0]);
-			answerText.setText(this.question['data'][randomIndex][1]);
+			this.updateAnswerElements(randomIndex, answerDiv, answerLink);
 			if(showAnswerButton) {
-				answerText.setAttribute("style", "visibility: hidden; display: none;");
+				this.hideElement(answerDiv);
+				this.hideElement(answerLink);
 				showAnswerButton.setAttribute("style", "visibility: visible;");
 			}
 		});
 	}
 
-	getControlButtons(container: Element, questionText: Element | null, answerText: Element | null, showAnswerButton: Element | null, randomIndex: number) {
-		if (questionText && answerText) {
-			this.getSkipButton(container, questionText, answerText, showAnswerButton)
+	getControlButtons(container: Element, questionText: Element | null, answerDiv: Element | null, answerLink: Element | null, showAnswerButton: Element | null, randomIndex: number) {
+		if (questionText && answerDiv && answerLink) {
+			this.getSkipButton(container, questionText, answerDiv, answerLink, showAnswerButton)
 	
-			this.getNextButton(container, questionText, answerText, showAnswerButton)
+			this.getNextButton(container, questionText, answerDiv, answerLink, showAnswerButton)
 		}
 	}
 
@@ -229,9 +308,9 @@ export class DiceRollerView extends ItemView {
 		let randomIndex = this.getRandomIndex();
 
 		if(this.meta['fileType'] && this.meta['fileType'] === 'flashcards') {
-			const [questionText, answerText, showAnswerButton] = this.getQuestionBody(container, randomIndex);
+			const [questionText, answerDiv, answerLink, showAnswerButton] = this.getQuestionBody(container, randomIndex);
 
-			this.getControlButtons(container, questionText, answerText, showAnswerButton, randomIndex)
+			this.getControlButtons(container, questionText, answerDiv, answerLink, showAnswerButton, randomIndex)
 		} else {
 			this.getErrorContent(container);
 			// TODO: Add a button to open the correct file
