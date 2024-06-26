@@ -100,7 +100,9 @@ export class DiceRollerView extends ItemView {
 			}
 		})
 
-		this.question['data'][this.randomIndex][4] = '1'
+		if (this.question['data'][this.randomIndex] && this.question['data'][this.randomIndex].length === 5) {
+			this.question['data'][this.randomIndex][4] = '1'
+		}
 
 		return this.randomIndex;
 	}
@@ -300,6 +302,13 @@ export class DiceRollerView extends ItemView {
 		}
 	}
 
+	getReloadButton(container: Element) {
+		const reloadButton = container.createEl("button", { text: "Reload" });
+		reloadButton.addEventListener("click",async () => {
+			this.load()
+		})
+	}
+
 	getItemView() {
 		const container = this.getEmptyContainer();
 
@@ -313,18 +322,23 @@ export class DiceRollerView extends ItemView {
 			this.getControlButtons(container, questionText, answerDiv, answerLink, showAnswerButton, randomIndex)
 		} else {
 			this.getErrorContent(container);
-			// TODO: Add a button to open the correct file
+
+			this.getReloadButton(container);
 		}
 	}
 
-	async onOpen() {
-		this.showAnswer = this.getSettings().showAnswer;
-
+	async load() {
 		this.noteFile = this.getActiveFile();
 
 		await this.loadNoteFile(this.noteFile);
 
 		this.getItemView();
+	}
+
+	async onOpen() {
+		this.showAnswer = this.getSettings().showAnswer;
+
+		this.load()
 	}
 
 	async onClose() {
