@@ -23,6 +23,7 @@ export class DiceRollerView extends ItemView {
 	}
 	navigation: boolean;
 	icon: string;
+	randomIndex: number;
 
 	constructor(leaf: WorkspaceLeaf) {
     	super(leaf);
@@ -30,6 +31,7 @@ export class DiceRollerView extends ItemView {
 		this.question = {headers: [], data: []};
 		this.navigation = true;
 		this.meta = {};
+		this.randomIndex = 0;
 	}
 
 	getViewType() {
@@ -41,7 +43,8 @@ export class DiceRollerView extends ItemView {
 	}
 
 	getSettings() {
-		return this.app.plugins.plugins['obsidian-flashcards-from-table']?.settings;
+		// TODO: Controllare se funziona o revertare
+		return this.app.plugins.getPlugin('obsidian-flashcards-from-table')?.settings;
 	}
 
 	getActiveFile() {
@@ -75,8 +78,30 @@ export class DiceRollerView extends ItemView {
 		}
 	}
 
-	getRandomIndex(max: number) {
-		return Math.floor(Math.random() * max);
+	getRandomIndex() {
+		this.question['data'].map((line) => {
+			if(line.length === 4) {
+				line.push('0')
+			}
+		})
+
+		if (this.question['data'].filter((line) => line[4] === '0').length === 0) {
+			this.question['data'].map((line) => {line[4] = '0'})
+		}
+
+		const min = Math.min(...this.question['data'].filter((line) => line[4] === '0').map((line) => {return Number(line[3])}))
+
+		const minDataset = this.question['data'].filter((line) => Number(line[3]) === min)
+
+		const randomIndex = Math.floor(Math.random() * minDataset.length);
+
+		this.question['data'].map((line, index) => {
+			if (line[0] === minDataset[randomIndex][0]) {
+				this.randomIndex = index
+			}
+		})
+
+		return this.randomIndex;
 	}
 
 	getEmptyContainer(): Element {
@@ -98,82 +123,115 @@ export class DiceRollerView extends ItemView {
 		container.createEl("hr");
 	}
 
+	getQuestionBody(container: Element, randomIndex: number) {
+		const questionText = container.createEl("div", { text: this.question['data'][randomIndex][0]});
+		container.createEl("br");
+
+		let answerText : Element;
+		let showAnswerButton: Element | null = null;
+
+		if(this && this.showAnswer === '1') {
+			answerText = container.createEl('div', { text: this.question['data'][randomIndex][1] });
+		} else {
+			showAnswerButton =  container.createEl("button", { text: "Show answer"});
+			answerText = container.createEl('div', { text: this.question['data'][randomIndex][1], attr: { style: "visibility: hidden; display: none;" } });
+			
+			showAnswerButton.addEventListener("click", () => {
+				answerText.setAttribute("style", "visibility: visible;");
+				if (showAnswerButton) {
+					showAnswerButton.setAttribute("style", "visibility: hidden; display: none;");
+				}
+			})
+		}
+		container.createEl("hr");
+
+		return [questionText, answerText, showAnswerButton]
+	}
+
+	getSkipButton(container: Element, questionText: Element, answerText: Element, showAnswerButton: Element | null) {
+		const skipButton = container.createEl("button", { text: "Skip", attr: { style: "margin-right: 10px" } });
+		skipButton.addEventListener("click", () => {
+			const randomIndex = this.getRandomIndex();
+			
+			questionText.setText(this.question['data'][randomIndex][0]);
+			answerText.setText(this.question['data'][randomIndex][1]);
+			if(showAnswerButton) {
+				answerText.setAttribute("style", "visibility: hidden; display: none;");
+				showAnswerButton.setAttribute("style", "visibility: visible;");
+			}
+		})
+	}
+
+	async updateFlashcardDataset() {
+		const text = this.inputText.split('\n');
+		const metaEnd = this.metaEnd;
+
+		const markdown = ['---']
+
+		text.slice(1, metaEnd).map((line) => {
+			markdown.push(line)
+		})
+
+		markdown.push('---')
+
+		text.slice(metaEnd + 1, metaEnd + 3).map((line) => {
+			markdown.push(line)
+		})
+
+		this.question['data'].map((line) => {
+			markdown.push(`| ${line[0]} | ${line[1]} | ${line[2]} | ${line[3]} |`)
+		})
+
+		if (this.noteFile) {
+			this.app.vault.modify(this.noteFile, markdown.join('\n'))
+		}
+	}
+
+	getToday() {
+		return new Date().toISOString().split('T')[0]
+	}
+
+	updateDataset() {
+		this.question['data'][this.randomIndex][2] = this.getToday()
+		this.question['data'][this.randomIndex][3] = String(Number(this.question['data'][this.randomIndex][3]) + 1)
+		this.updateFlashcardDataset();
+	}
+
+	getNextButton(container: Element, questionText: Element, answerText: Element, showAnswerButton: Element | null) {
+		const nextButton = container.createEl("button", { text: "Next", attr: { style: "margin-right: 10px" } });
+		nextButton.addEventListener("click", () => {
+			this.updateDataset();
+
+			const randomIndex = this.getRandomIndex();
+			
+			questionText.setText(this.question['data'][randomIndex][0]);
+			answerText.setText(this.question['data'][randomIndex][1]);
+			if(showAnswerButton) {
+				answerText.setAttribute("style", "visibility: hidden; display: none;");
+				showAnswerButton.setAttribute("style", "visibility: visible;");
+			}
+		});
+	}
+
+	getControlButtons(container: Element, questionText: Element | null, answerText: Element | null, showAnswerButton: Element | null, randomIndex: number) {
+		if (questionText && answerText) {
+			this.getSkipButton(container, questionText, answerText, showAnswerButton)
+	
+			this.getNextButton(container, questionText, answerText, showAnswerButton)
+		}
+	}
+
 	getItemView() {
 		const container = this.getEmptyContainer();
 
 		this.getContainerHeader(container);
 
-		let randomIndex = this.getRandomIndex(this.question['data'].length);
-
+		let randomIndex = this.getRandomIndex();
 
 		if(this.meta['fileType'] && this.meta['fileType'] === 'flashcards') {
-			// TODO
-			const questionText = container.createEl("div", { text: this.question['data'][randomIndex][0]});
-			let answerText;
-			let showAnswerButton;
+			const [questionText, answerText, showAnswerButton] = this.getQuestionBody(container, randomIndex);
 
-			if(this && this.showAnswer === '1') {
-				container.createEl("br");
-				answerText = container.createEl('div', { text: this.question['data'][randomIndex][1], attr: { href: "#" }});
-			} else {
-				container.createEl("br");
-				showAnswerButton =  container.createEl("button", { text: "Show answer"});
-				answerText = container.createEl('div', { text: this.question['data'][randomIndex][1], attr: { style: "visibility: hidden; display: none;" } });
-				showAnswerButton.addEventListener("click", () => {
-					answerText.setAttribute("style", "visibility: visible;");
-					showAnswerButton.setAttribute("style", "visibility: hidden; display: none;");
-				})
-			}
-			container.createEl("hr");
-
-			const skipButton = container.createEl("button", { text: "Skip", attr: { style: "margin-right: 10px" } });
-			skipButton.addEventListener("click", () => {
-				randomIndex = Math.floor(Math.random() * this.question['data'].length);
-				
-				questionText.setText(this.question['data'][randomIndex][0]);
-				answerText.setText(this.question['data'][randomIndex][1]);
-				if(this && this.showAnswer !== '1') {
-					answerText.setAttribute("style", "visibility: hidden; display: none;");
-					showAnswerButton.setAttribute("style", "visibility: visible;");
-				}
-			})
-
-			const nextButton = container.createEl("button", { text: "Next", attr: { style: "margin-right: 10px" } });
-			nextButton.addEventListener("click", () => {
-				this.question['data'][randomIndex][3] = Number(this.question['data'][randomIndex][3]) + 1
-				randomIndex = Math.floor(Math.random() * this.question['data'].length);
-				
-				questionText.setText(this.question['data'][randomIndex][0]);
-				answerText.setText(this.question['data'][randomIndex][1]);
-				if(this && this.showAnswer !== '1') {
-					answerText.setAttribute("style", "visibility: hidden; display: none;");
-					showAnswerButton.setAttribute("style", "visibility: visible;");
-				}
-			})
-			
-			const saveButton = container.createEl("button", { text: "Save", attr: { style: "margin-right: 10px" } });
-			saveButton.addEventListener("click", async () => {
-				const text = this.inputText.split('\n');
-				const metaEnd = this.metaEnd;
-
-				const markdown = ['---']
-
-				text.slice(1, metaEnd).map((line) => {
-					markdown.push(line)
-				})
-
-				markdown.push('---')
-
-				text.slice(metaEnd + 1, metaEnd + 3).map((line) => {
-					markdown.push(line)
-				})
-
-				this.question['data'].map((line) => {
-					markdown.push(`| ${line[0]} | ${line[1]} | ${line[2]} | ${line[3]} |`)
-				})
-
-				this.app.vault.modify(this.noteFile, markdown.join('\n'))
-			});
+			this.getControlButtons(container, questionText, answerText, showAnswerButton, randomIndex)
 		} else {
 			this.getErrorContent(container);
 			// TODO: Add a button to open the correct file
@@ -198,8 +256,12 @@ export class DiceRollerView extends ItemView {
 export default class FlashcardsFromTablePlugin extends Plugin {
 	settings: DiceRollerSettings;
 
+	getToday() {
+		return new Date().toISOString().split('T')[0]
+	}
+
 	getInitRow = (index: number) => {
-		const today = new Date().toISOString().split('T')[0]
+		const today = this.getToday()
 		return `| Question ${index} | Answer ${index} | ${today} | 0 |`
 	}
 
