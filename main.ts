@@ -32,6 +32,7 @@ export class DiceRollerView extends ItemView {
 		this.navigation = false;
 		this.meta = {};
 		this.randomIndex = 0;
+		this.inputText = '';
 	}
 
 	getViewType() {
@@ -51,7 +52,7 @@ export class DiceRollerView extends ItemView {
 	}
 
 	async loadNoteFile(noteFile: TFile | null) {
-		if(noteFile && noteFile.name) {
+		if(noteFile && noteFile.name && this.inputText === '') {
 			this.inputText = await this.app.vault.read(noteFile)
 
 			let text = this.inputText.split('\n');
@@ -63,7 +64,7 @@ export class DiceRollerView extends ItemView {
 				this.meta[key] = value
 			})
 
-			if(this.meta['fileType'] && this.meta['fileType'] === 'flashcards') {
+			if(this.meta['fileType'] && this.meta['fileType'] === 'flashcards' && this.question.data.length === 0) {
 				text.slice(this.metaEnd + 1, text.length).map((line, index) => {
 					if(index !== 1 && line !== '') {
 						if(index === 0) {
@@ -74,6 +75,11 @@ export class DiceRollerView extends ItemView {
 					}
 				})
 			}
+
+			console.log(this.inputText);
+			console.log(this.metaEnd);
+			console.log(this.question);
+			
 		}
 	}
 
@@ -249,6 +255,7 @@ export class DiceRollerView extends ItemView {
 		})
 
 		if (this.noteFile) {
+			// this.app.vault.delete(this.noteFile, true)
 			this.app.vault.modify(this.noteFile, markdown.join('\n'))
 		}
 	}
@@ -336,7 +343,7 @@ export class DiceRollerView extends ItemView {
 	}
 
 	async onOpen() {
-		this.showAnswer = this.getSettings().showAnswer;
+		this.showAnswer = this.getSettings().showAnswer || '1';
 
 		this.load()
 	}
@@ -381,7 +388,6 @@ export default class FlashcardsFromTablePlugin extends Plugin {
 			}
 		});
 
-		
 		this.registerView(
 			VIEW_TYPE_DICE_ROLLER,
 			(leaf) => new DiceRollerView(leaf)
